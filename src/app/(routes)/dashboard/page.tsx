@@ -6,8 +6,18 @@ import Link from 'next/link';
 import { useAuth } from '../../lib/auth-context';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/button';
-import { Home, PlusCircle, Heart, MessageCircle, Search, RefreshCw, Building, MapPin, Users, Bell, ChevronRight } from 'lucide-react';
+import { 
+  Home, 
+  PlusCircle, 
+  Heart, 
+  MessageCircle, 
+  Search, 
+  RefreshCw, 
+  Building, 
+  ChevronRight
+} from 'lucide-react';
 import { motion } from 'framer-motion';
+import { getEffectiveUserType } from '../../lib/user-utils';
 
 // Define proper types for our data
 interface Property {
@@ -32,7 +42,7 @@ interface Favorite {
   user_id: string;
   property_id: string;
   created_at: string;
-  properties?: Property;
+  property?: Property;
 }
 
 export default function Dashboard() {
@@ -44,6 +54,15 @@ export default function Dashboard() {
   const [greetingTime, setGreetingTime] = useState('');
 
   useEffect(() => {
+    // Debug user data
+    console.log('User data:', user);
+    console.log('User metadata:', user?.user_metadata);
+    console.log('User type from metadata:', user?.user_metadata?.user_type);
+    console.log('User profile:', user?.profile);
+    console.log('User type from profile:', user?.profile?.user_type);
+    console.log('Effective user type:', getEffectiveUserType(user));
+    console.log('Is this getUserType giving landlord?', user?.user_metadata?.user_type === 'landlord');
+    
     // Set greeting based on time of day
     const hour = new Date().getHours();
     if (hour < 12) setGreetingTime('Good morning');
@@ -57,14 +76,16 @@ export default function Dashboard() {
         setDataLoading(true);
         
         try {
-          const userType = user?.user_metadata?.user_type;
+          // Get effective user type
+          const effectiveUserType = getEffectiveUserType(user);
           
-          if (userType === 'landlord') {
+          if (effectiveUserType === 'landlord') {
             // Load landlord's properties
             const { data, error } = await supabase
               .from('properties')
               .select('*')
-              .eq('owner_id', user?.id);
+              .eq('owner_id', user?.id)
+              .order('created_at', { ascending: false });
               
             if (error) throw error;
             setProperties(data || []);
@@ -72,7 +93,7 @@ export default function Dashboard() {
             // Load tenant's favorite properties
             const { data, error } = await supabase
               .from('favorites')
-              .select('*, properties(*)')
+              .select('*, property:properties(*)')
               .eq('user_id', user?.id);
               
             if (error) throw error;
@@ -100,7 +121,8 @@ export default function Dashboard() {
     );
   }
 
-  const userType = user?.user_metadata?.user_type;
+  // Get user info
+  const effectiveUserType = getEffectiveUserType(user);
   const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'there';
   
   // Animation variants
@@ -122,337 +144,409 @@ export default function Dashboard() {
     }
   };
 
+  // Format price as currency
+  const formatPrice = (price: number): string => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0
+    }).format(price);
+  };
+
+  // Get property status badge
+  const getStatusBadge = (isActive: boolean) => {
+    if (isActive) {
+      return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+        Active
+      </span>;
+    }
+    return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+      Inactive
+    </span>;
+  };
+
+  // Handle direct navigation to property creation
+  const handleCreateProperty = () => {
+    console.log('Navigating to property creation page');
+    router.push('/properties/new');
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 pb-12">
-      {/* Header */}
-      <div className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-            <div className="mb-4 md:mb-0">
-              <h1 className="text-2xl font-bold text-gray-900">
-                {greetingTime}, {userName}
-              </h1>
-              <p className="mt-1 text-sm text-gray-500">
-                Welcome to your Propspace dashboard
-              </p>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 pb-12 pt-6">
+      {/* Welcome Banner */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 sm:p-10">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+              <div className="mb-4 md:mb-0">
+                <h1 className="text-3xl font-bold text-white">
+                  {greetingTime}, {userName}
+                </h1>
+                <p className="mt-1 text-lg text-blue-100">
+                  Welcome to your Propspace dashboard
+                </p>
+              </div>
+              
+              {effectiveUserType === 'landlord' ? (
+                <div className="flex space-x-3">
+                  <Button 
+                    onClick={handleCreateProperty}
+                    className="bg-green-500 text-white hover:bg-green-600 shadow-md font-medium text-base px-6 py-2.5"
+                    size="lg"
+                  >
+                    <PlusCircle className="mr-2 h-5 w-5" />
+                    Add New Property
+                  </Button>
+                  <Link href="/properties/my-properties" passHref>
+                    <Button variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20">
+                      <Building className="mr-2 h-4 w-4" />
+                      My Properties
+                    </Button>
+                  </Link>
+                </div>
+              ) : (
+                <Link href="/properties" passHref>
+                  <Button className="bg-green-500 text-white hover:bg-green-600 shadow-md font-medium">
+                    <Search className="mr-2 h-4 w-4" />
+                    Browse Properties
+                  </Button>
+                </Link>
+              )}
             </div>
-            
-            {userType === 'landlord' ? (
-              <Link href="/properties/new" passHref>
-                <Button className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transition-all">
-                  <PlusCircle className="mr-2 h-4 w-4" />
-                  Add New Property
-                </Button>
-              </Link>
-            ) : (
-              <Link href="/properties" passHref>
-                <Button className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transition-all">
-                  <Search className="mr-2 h-4 w-4" />
-                  Browse Properties
-                </Button>
-              </Link>
-            )}
           </div>
         </div>
       </div>
       
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-        {/* Stats Cards */}
-        <motion.div 
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8"
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-        >
-          <motion.div 
-            className="bg-white overflow-hidden shadow-lg rounded-xl transition-all hover:shadow-xl"
-            variants={itemVariants}
-          >
-            <div className="p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4">
-                  <Home className="h-6 w-6 text-white" />
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">
-                      {userType === 'landlord' ? 'My Properties' : 'Favorite Properties'}
-                    </dt>
-                    <dd>
-                      <div className="text-2xl font-semibold text-gray-900">
-                        {userType === 'landlord' ? properties.length : favorites.length}
-                      </div>
-                    </dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
-            <div className="bg-gray-50 px-6 py-3">
-              <div className="text-sm">
-                <Link 
-                  href={userType === 'landlord' ? "/properties/my-properties" : "/properties/favorites"}
-                  className="flex items-center font-medium text-blue-700 hover:text-blue-900"
-                >
-                  View all
-                  <ChevronRight className="ml-1 h-4 w-4" />
-                </Link>
-              </div>
-            </div>
-          </motion.div>
-          
-          <motion.div 
-            className="bg-white overflow-hidden shadow-lg rounded-xl transition-all hover:shadow-xl"
-            variants={itemVariants}
-          >
-            <div className="p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-4">
-                  <MessageCircle className="h-6 w-6 text-white" />
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">
-                      Messages
-                    </dt>
-                    <dd className="flex items-center">
-                      <div className="text-2xl font-semibold text-gray-900">
-                        0
-                      </div>
-                      <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                        All caught up
-                      </span>
-                    </dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
-            <div className="bg-gray-50 px-6 py-3">
-              <div className="text-sm">
-                <Link 
-                  href="/messages"
-                  className="flex items-center font-medium text-blue-700 hover:text-blue-900"
-                >
-                  View all
-                  <ChevronRight className="ml-1 h-4 w-4" />
-                </Link>
-              </div>
-            </div>
-          </motion.div>
-          
-          {userType === 'tenant' ? (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Two column layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main content column */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Stats Cards */}
             <motion.div 
-              className="bg-white overflow-hidden shadow-lg rounded-xl transition-all hover:shadow-xl"
-              variants={itemVariants}
+              className="grid grid-cols-1 md:grid-cols-3 gap-4"
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
             >
-              <div className="p-6">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0 bg-gradient-to-br from-pink-500 to-pink-600 rounded-xl p-4">
-                    <Heart className="h-6 w-6 text-white" />
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
-                        Saved Searches
-                      </dt>
-                      <dd>
-                        <div className="text-2xl font-semibold text-gray-900">
-                          0
-                        </div>
-                      </dd>
-                    </dl>
+              <motion.div 
+                className="bg-white overflow-hidden shadow-lg rounded-xl transition-all hover:shadow-xl border border-gray-100"
+                variants={itemVariants}
+              >
+                <div className="p-4">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-3">
+                      <Home className="h-5 w-5 text-white" />
+                    </div>
+                    <div className="ml-4 w-0 flex-1">
+                      <dl>
+                        <dt className="text-sm font-medium text-gray-500 truncate">
+                          {effectiveUserType === 'landlord' ? 'My Properties' : 'Favorite Properties'}
+                        </dt>
+                        <dd>
+                          <div className="text-xl font-semibold text-gray-900">
+                            {effectiveUserType === 'landlord' ? properties.length : favorites.length}
+                          </div>
+                        </dd>
+                      </dl>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="bg-gray-50 px-6 py-3">
-                <div className="text-sm">
-                  <Link 
-                    href="/saved-searches"
-                    className="flex items-center font-medium text-blue-700 hover:text-blue-900"
-                  >
-                    View all
-                    <ChevronRight className="ml-1 h-4 w-4" />
+              </motion.div>
+              
+              <motion.div 
+                className="bg-white overflow-hidden shadow-lg rounded-xl transition-all hover:shadow-xl border border-gray-100"
+                variants={itemVariants}
+              >
+                <div className="p-4">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-3">
+                      <MessageCircle className="h-5 w-5 text-white" />
+                    </div>
+                    <div className="ml-4 w-0 flex-1">
+                      <dl>
+                        <dt className="text-sm font-medium text-gray-500 truncate">
+                          Messages
+                        </dt>
+                        <dd>
+                          <div className="text-xl font-semibold text-gray-900">
+                            0
+                          </div>
+                        </dd>
+                      </dl>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+              
+              <motion.div 
+                className="bg-white overflow-hidden shadow-lg rounded-xl transition-all hover:shadow-xl border border-gray-100"
+                variants={itemVariants}
+              >
+                <div className="p-4">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0 bg-gradient-to-br from-pink-500 to-pink-600 rounded-xl p-3">
+                      <RefreshCw className="h-5 w-5 text-white" />
+                    </div>
+                    <div className="ml-4 w-0 flex-1">
+                      <dl>
+                        <dt className="text-sm font-medium text-gray-500 truncate">
+                          Recent Activity
+                        </dt>
+                        <dd>
+                          <div className="text-xl font-semibold text-gray-900">
+                            0
+                          </div>
+                        </dd>
+                      </dl>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+
+            {/* Property or Favorites List */}
+            {effectiveUserType === 'landlord' ? (
+              // LANDLORD VIEW
+              <div className="bg-white rounded-xl shadow-md overflow-hidden">
+                <div className="p-6 flex justify-between items-center border-b border-gray-100">
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900">My Recent Properties</h2>
+                    <p className="text-sm text-gray-500">Properties you&apos;ve listed recently</p>
+                  </div>
+                  <Link href="/properties/my-properties" passHref>
+                    <Button variant="outline" className="text-sm">
+                      View All
+                      <ChevronRight className="ml-1 h-4 w-4" />
+                    </Button>
                   </Link>
                 </div>
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div 
-              className="bg-white overflow-hidden shadow-lg rounded-xl transition-all hover:shadow-xl"
-              variants={itemVariants}
-            >
-              <div className="p-6">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0 bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4">
-                    <Users className="h-6 w-6 text-white" />
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
-                        Tenant Inquiries
-                      </dt>
-                      <dd>
-                        <div className="text-2xl font-semibold text-gray-900">
-                          0
-                        </div>
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-gray-50 px-6 py-3">
-                <div className="text-sm">
-                  <Link 
-                    href="/inquiries"
-                    className="flex items-center font-medium text-blue-700 hover:text-blue-900"
-                  >
-                    View all
-                    <ChevronRight className="ml-1 h-4 w-4" />
-                  </Link>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </motion.div>
-        
-        {/* Recent Activity Section */}
-        <motion.div 
-          variants={itemVariants}
-          initial="hidden" 
-          animate="visible"
-          className="mb-8"
-        >
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Recent Activity</h2>
-          <div className="bg-white shadow-lg rounded-xl overflow-hidden">
-            <div className="p-6">
-              <div className="flex items-center justify-center py-8">
-                <div className="text-center">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
-                    <RefreshCw className="h-6 w-6 text-blue-600" />
-                  </div>
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">No recent activity</h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    {userType === 'landlord' 
-                      ? 'Add properties or respond to inquiries to see activity here.'
-                      : 'Start browsing and favoriting properties to see activity here.'}
-                  </p>
-                  <div className="mt-6">
-                    <Link 
-                      href={userType === 'landlord' ? "/properties/new" : "/properties"}
-                      passHref
-                    >
-                      <Button className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50">
-                        {userType === 'landlord' ? 'Add Property' : 'Browse Properties'}
+                
+                <div className="divide-y divide-gray-100">
+                  {properties.length === 0 ? (
+                    <div className="p-10 text-center">
+                      <Building className="h-16 w-16 mx-auto text-gray-300 mb-4" />
+                      <p className="mt-2 text-gray-500 text-lg mb-6">You haven&apos;t listed any properties yet</p>
+                      <Button 
+                        onClick={handleCreateProperty}
+                        className="mt-4 bg-green-600 text-white hover:bg-green-700 shadow-md font-medium px-6 py-3 text-base"
+                      >
+                        <PlusCircle className="mr-2 h-5 w-5" />
+                        Add Your First Property
                       </Button>
+                    </div>
+                  ) : (
+                    // Show up to 3 most recent properties
+                    properties.slice(0, 3).map((property) => (
+                      <div key={property.id} className="p-4 sm:px-6 hover:bg-gray-50">
+                        <Link href={`/properties/${property.id}`}>
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                            <div className="mb-2 sm:mb-0">
+                              <div className="flex items-center">
+                                <h3 className="text-base font-medium text-blue-600 truncate">{property.title}</h3>
+                                <div className="ml-2">{getStatusBadge(property.is_active)}</div>
+                              </div>
+                              <div className="mt-1 text-sm text-gray-500">
+                                {property.address}, {property.city}, {property.state}
+                              </div>
+                            </div>
+                            <div className="flex items-center mt-2 sm:mt-0">
+                              <span className="text-base font-semibold text-gray-900">
+                                {formatPrice(property.price)}
+                              </span>
+                              <ChevronRight className="ml-2 h-4 w-4 text-gray-400" />
+                            </div>
+                          </div>
+                        </Link>
+                      </div>
+                    ))
+                  )}
+                </div>
+                
+                {properties.length > 0 && (
+                  <div className="bg-gray-50 px-6 py-4">
+                    <Link href="/properties/my-properties" passHref className="text-sm font-medium text-blue-600 hover:text-blue-500">
+                      View all properties ({properties.length})
                     </Link>
                   </div>
+                )}
+              </div>
+            ) : (
+              // TENANT VIEW
+              <div className="bg-white rounded-xl shadow-md overflow-hidden">
+                <div className="p-6 flex justify-between items-center border-b border-gray-100">
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900">My Favorite Properties</h2>
+                    <p className="text-sm text-gray-500">Properties you&apos;ve saved</p>
+                  </div>
+                  <Link href="/properties/favorites" passHref>
+                    <Button variant="outline" className="text-sm">
+                      View All
+                      <ChevronRight className="ml-1 h-4 w-4" />
+                    </Button>
+                  </Link>
                 </div>
+                
+                <div className="divide-y divide-gray-100">
+                  {favorites.length === 0 ? (
+                    <div className="p-6 text-center">
+                      <Heart className="h-12 w-12 mx-auto text-gray-300" />
+                      <p className="mt-2 text-gray-500">You haven&apos;t favorited any properties yet</p>
+                      <Link href="/properties" passHref>
+                        <Button 
+                          className="mt-4 bg-blue-500 text-white hover:bg-blue-600"
+                        >
+                          <Search className="mr-2 h-4 w-4" />
+                          Browse Properties
+                        </Button>
+                      </Link>
+                    </div>
+                  ) : (
+                    // Show up to 3 favorite properties
+                    favorites.slice(0, 3).map((favorite) => {
+                      const property = favorite.property;
+                      if (!property) return null;
+                      
+                      return (
+                        <div key={favorite.id} className="p-4 sm:px-6 hover:bg-gray-50">
+                          <Link href={`/properties/${property.id}`}>
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                              <div className="mb-2 sm:mb-0">
+                                <h3 className="text-base font-medium text-blue-600 truncate">{property.title}</h3>
+                                <div className="mt-1 text-sm text-gray-500">
+                                  {property.address}, {property.city}, {property.state}
+                                </div>
+                              </div>
+                              <div className="flex items-center mt-2 sm:mt-0">
+                                <span className="text-base font-semibold text-gray-900">
+                                  {formatPrice(property.price)}
+                                </span>
+                                <ChevronRight className="ml-2 h-4 w-4 text-gray-400" />
+                              </div>
+                            </div>
+                          </Link>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+                
+                {favorites.length > 0 && (
+                  <div className="bg-gray-50 px-6 py-4">
+                    <Link href="/properties/favorites" passHref className="text-sm font-medium text-blue-600 hover:text-blue-500">
+                      View all favorites ({favorites.length})
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Right sidebar */}
+          <div className="space-y-6">
+            {/* Quick Actions */}
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="p-6 border-b border-gray-100">
+                <h2 className="text-lg font-semibold text-gray-900">Quick Actions</h2>
+              </div>
+              <div className="p-6 space-y-4">
+                {effectiveUserType === 'landlord' && (
+                  <Button 
+                    onClick={handleCreateProperty}
+                    className="w-full justify-start bg-green-600 text-white hover:bg-green-700 border border-green-500 shadow-sm"
+                  >
+                    <PlusCircle className="mr-2 h-5 w-5" />
+                    Add New Property
+                  </Button>
+                )}
+                
+                <Link href="/properties" passHref>
+                  <Button className="w-full justify-start bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-100">
+                    <Search className="mr-2 h-4 w-4" />
+                    Browse Properties
+                  </Button>
+                </Link>
+                
+                {effectiveUserType === 'landlord' ? (
+                  <Link href="/properties/my-properties" passHref>
+                    <Button className="w-full justify-start bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-100">
+                      <Building className="mr-2 h-4 w-4" />
+                      My Properties
+                    </Button>
+                  </Link>
+                ) : (
+                  <Link href="/properties/favorites" passHref>
+                    <Button className="w-full justify-start bg-pink-50 text-pink-700 hover:bg-pink-100 border border-pink-100">
+                      <Heart className="mr-2 h-4 w-4" />
+                      View Favorites
+                    </Button>
+                  </Link>
+                )}
+                
+                <Link href="/messages" passHref>
+                  <Button className="w-full justify-start bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-100">
+                    <MessageCircle className="mr-2 h-4 w-4" />
+                    Messages
+                  </Button>
+                </Link>
+              </div>
+            </div>
+            
+            {/* Tips Section */}
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="p-6 border-b border-gray-100">
+                <h2 className="text-lg font-semibold text-gray-900">Tips</h2>
+              </div>
+              <div className="p-6">
+                <ul className="space-y-4 text-sm text-gray-600">
+                  {effectiveUserType === 'landlord' ? (
+                    <>
+                      <li className="flex">
+                        <div className="flex-shrink-0 h-5 w-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-500 mr-3">
+                          1
+                        </div>
+                        <p>Add high-quality photos to make your listings stand out</p>
+                      </li>
+                      <li className="flex">
+                        <div className="flex-shrink-0 h-5 w-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-500 mr-3">
+                          2
+                        </div>
+                        <p>Provide detailed descriptions of your properties</p>
+                      </li>
+                      <li className="flex">
+                        <div className="flex-shrink-0 h-5 w-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-500 mr-3">
+                          3
+                        </div>
+                        <p>Respond quickly to tenant inquiries</p>
+                      </li>
+                    </>
+                  ) : (
+                    <>
+                      <li className="flex">
+                        <div className="flex-shrink-0 h-5 w-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-500 mr-3">
+                          1
+                        </div>
+                        <p>Save your favorite properties to view them later</p>
+                      </li>
+                      <li className="flex">
+                        <div className="flex-shrink-0 h-5 w-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-500 mr-3">
+                          2
+                        </div>
+                        <p>Use filters to narrow down your property search</p>
+                      </li>
+                      <li className="flex">
+                        <div className="flex-shrink-0 h-5 w-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-500 mr-3">
+                          3
+                        </div>
+                        <p>Contact landlords directly for more information</p>
+                      </li>
+                    </>
+                  )}
+                </ul>
               </div>
             </div>
           </div>
-        </motion.div>
-        
-        {/* Quick Actions */}
-        <motion.div 
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-        >
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <motion.div 
-              variants={itemVariants}
-              className="bg-white shadow-lg rounded-xl overflow-hidden transition-all hover:shadow-xl"
-            >
-              <div className="p-6">
-                <div className="bg-blue-50 rounded-xl w-12 h-12 flex items-center justify-center mb-4">
-                  {userType === 'landlord' ? (
-                    <Building className="h-6 w-6 text-blue-600" />
-                  ) : (
-                    <Search className="h-6 w-6 text-blue-600" />
-                  )}
-                </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  {userType === 'landlord' 
-                    ? 'Manage Properties' 
-                    : 'Find Your Next Home'}
-                </h3>
-                <p className="text-sm text-gray-500 mb-4">
-                  {userType === 'landlord'
-                    ? 'Create and manage your property listings to find the perfect tenants.'
-                    : 'Browse properties that match your preferences and save your favorites.'}
-                </p>
-                <Link 
-                  href={userType === 'landlord' ? "/properties/my-properties" : "/properties"}
-                  passHref
-                >
-                  <Button className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transition-all">
-                    {userType === 'landlord' ? 'Manage Properties' : 'Browse Properties'}
-                  </Button>
-                </Link>
-              </div>
-            </motion.div>
-            
-            <motion.div 
-              variants={itemVariants}
-              className="bg-white shadow-lg rounded-xl overflow-hidden transition-all hover:shadow-xl"
-            >
-              <div className="p-6">
-                <div className="bg-purple-50 rounded-xl w-12 h-12 flex items-center justify-center mb-4">
-                  <MessageCircle className="h-6 w-6 text-purple-600" />
-                </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Messages & Communication
-                </h3>
-                <p className="text-sm text-gray-500 mb-4">
-                  {userType === 'landlord'
-                    ? 'Communicate with potential and current tenants about your properties.'
-                    : 'Contact landlords and ask questions about properties you are interested in.'}
-                </p>
-                <Link 
-                  href="/messages"
-                  passHref
-                >
-                  <Button className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 transition-all">
-                    View Messages
-                  </Button>
-                </Link>
-              </div>
-            </motion.div>
-            
-            <motion.div 
-              variants={itemVariants}
-              className="bg-white shadow-lg rounded-xl overflow-hidden transition-all hover:shadow-xl"
-            >
-              <div className="p-6">
-                <div className="bg-green-50 rounded-xl w-12 h-12 flex items-center justify-center mb-4">
-                  {userType === 'landlord' ? (
-                    <Bell className="h-6 w-6 text-green-600" />
-                  ) : (
-                    <MapPin className="h-6 w-6 text-green-600" />
-                  )}
-                </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  {userType === 'landlord' 
-                    ? 'Manage Notifications' 
-                    : 'Saved Searches & Alerts'}
-                </h3>
-                <p className="text-sm text-gray-500 mb-4">
-                  {userType === 'landlord'
-                    ? 'Set up notifications for new inquiries and manage your preferences.'
-                    : 'Save your search criteria and get notified when new matching properties become available.'}
-                </p>
-                <Link 
-                  href={userType === 'landlord' ? "/notifications" : "/saved-searches"}
-                  passHref
-                >
-                  <Button className="w-full bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 transition-all">
-                    {userType === 'landlord' ? 'Notification Settings' : 'Manage Searches'}
-                  </Button>
-                </Link>
-              </div>
-            </motion.div>
-          </div>
-        </motion.div>
+        </div>
       </div>
     </div>
   );
